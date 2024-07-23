@@ -1,8 +1,20 @@
+# 起動コマンド uvicorn main:app --reload
+
 from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 import pulp
+
+from typing import List
+
+from fastapi import BackgroundTasks, FastAPI
+from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+from pydantic import BaseModel, EmailStr
+from starlette.responses import JSONResponse
+
+import os
+
 
 app = FastAPI()
 
@@ -201,3 +213,109 @@ async def hello(firstday: int = Form()):
                     buf.append(f' {c}')
             dic.setdefault(f'ナース{p}', buf)
     return dic
+
+
+class EmailSchema(BaseModel):
+    email: EmailStr
+
+# conf = ConnectionConfig(
+#     MAIL_USERNAME =os.getenv,
+#     MAIL_PASSWORD = "**********",
+#     MAIL_FROM = "test@email.com",
+#     MAIL_PORT = 465,
+#     MAIL_SERVER = "mail server",
+#     MAIL_STARTTLS = False,
+#     MAIL_SSL_TLS = True,
+#     USE_CREDENTIALS = True,
+#     VALIDATE_CERTS = True
+# )
+
+@app.post("/ga")
+async def send(email: EmailSchema):
+    html = """<p>Hi this test mail, thanks for using Fastapi-mail</p> """
+    message = MessageSchema(
+        subject="Fastapi-Mail module",
+        recipients=email.email,
+        body=html,
+        subtype=MessageType.html
+    )
+    fm=FastMail(conf)
+    await fm.send_message(message)
+    return "hello"
+
+@app.post("/test")
+async def send(email: EmailSchema):
+    html = """<p>Hi this test mail, thanks for using Fastapi-mail</p> """
+    message = MessageSchema(
+        subject="Fastapi-Mail module",
+        recipients=email.email,
+        body=html,
+        subtype=MessageType.html
+    )
+    return email.email
+
+
+import os
+import pickle
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+
+
+# Gmail APIのスコープを設定
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.labels",
+    "https://www.googleapis.com/auth/gmail.modify",
+]
+
+@app.get("/token")
+async def get_credential():
+    """
+    アクセストークンの取得
+
+    カレントディレクトリに pickle 形式でトークンを保存し、再利用できるようにする。（雑ですみません。。）
+    """
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    SCOPES = ['https://mail.google.com/']
+
+    flow = InstalledAppFlow.from_client_secrets_file(
+    './client_secret.json', SCOPES)
+    creds = flow.run_local_server(port=0)
+
+    with open('token.json', 'w') as token:
+        token.write(creds.to_json()) 
+    return ("complete")
+    
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from email.mime.text import MIMEText
+import base64
+
+def message_base64_encode(message):
+    return base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+
+def mail_post(mail_text, mail_to, title):
+    scopes = ['https://mail.google.com/']
+    creds = Credentials.from_authorized_user_file('token.json', scopes)
+    service = build('gmail', 'v1', credentials=creds)
+
+    message = MIMEText(f'{mail_text}')
+    message['To'] = f'{mail_to}'
+    message['From'] = 'sasuke.miyazawa@gmail.com'
+    message['Subject'] = f'{title}'
+
+    raw = {'raw': message_base64_encode(message)}
+    service.users().messages().send(
+        userId='me',
+        body=raw
+    ).execute()
+
+@app.get("/mail")
+async def mail():
+    mail_text = "メール本文の内容"
+    mailaddress = "b1020251@fun.ac.jp"#送信先のメールアドレス
+    mail_title = "メールのタイトル"
+    mail_post(mail_text, mailaddress, mail_title)
