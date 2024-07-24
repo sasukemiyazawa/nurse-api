@@ -24,11 +24,15 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers={"*"},
 )
+
+headers = {
+        "Access-Control-Allow-Origin: *"
+    }
 
 # pulpによるシフト生成
 @app.post("/posts")
@@ -149,8 +153,6 @@ import base64
 
 def message_base64_encode(message):
     return base64.urlsafe_b64encode(message.as_bytes()).decode()
-
-
 def mail_post(mail_text, mail_to, title):
     scopes = ['https://mail.google.com/']
     creds = Credentials.from_authorized_user_file('token.json', scopes)
@@ -166,21 +168,21 @@ def mail_post(mail_text, mail_to, title):
         userId='me',
         body=raw
     ).execute()
-
-async def mail():
+async def mail(email: str):
     mail_text = "http://localhost:3000/ga/result"
-    mailaddress = "b1020251@fun.ac.jp"#送信先のメールアドレス
+    mailaddress = email #送信先のメールアドレス
     mail_title = "メールのタイトル"
     mail_post(mail_text, mailaddress, mail_title)
-
-
-async def function():
-    await ga()
-    await mail()
-    print(app.state.result)
-
+    return 0
 
 # gaによるシフト生成
+def function():
+    
+    ga()
+    
+    # await mail()
+    # print(app.state.result)
+    return mail()
 
 import random
 from deap import base, creator, tools, algorithms
@@ -188,46 +190,45 @@ import numpy as np
 import time
 import json
 
-@app.get("/ga")
-async def res(background_tasks: BackgroundTasks):
-    background_tasks.add_task(function)
-    # background_tasks.add_task(mail)
+@app.post("/ga")
+def res(background_tasks: BackgroundTasks, email: str = Form(), gen: int = Form()):
+    background_tasks.add_task(ga, gen)
+    background_tasks.add_task(mail, email)
     return "hello"
 
 @app.get("/ga/result")
 async def result():
-    dic = app.state.result
+    data = {}
+    data["result"]=(app.state.result)
+    data["num_of_days"]=(app.state.num_of_days)
+    data["num_of_day_shift"]=(app.state.num_of_day_shift)
+    data["num_of_night_shift"]=(app.state.num_of_night_shift)
     # buff = dic.item()
     # print(buff)
-    return dic
+    return data
 
-async def ga():
-    #hof削除ver
-    # ナースの人数とスケジュール期間
+def ga(gen: int):
+    #最新版
+   # ナースの人数とスケジュール期間
     NUM_NURSES = 10
-    DAYS = 30
+    DAYS = 31
     MAX_WORKING_DAYS = 20
+    MAX_NIGHT_SHIFTS = 5  # 追加: 最大夜勤日数
     # 適応度クラスの作成
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     # 個体クラスの作成
     creator.create("Individual", np.ndarray, fitness=creator.FitnessMin)
-    # Toolboxの作成
-    toolbox = base.Toolbox()
-    # 遺伝子を生成する関数"attr_gene"を登録 ok
-    toolbox.register("attr_gene", random.randint, 0, 2)
-    # 個体を生成する関数”individual"を登録
-    toolbox.register("individual", tools.initRepeat, creator.Individual,
-                    toolbox.attr_gene, NUM_NURSES * DAYS)
-    # 個体集団を生成する関数"population"を登録
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     def evaluate(individual):
         individual = np.array(individual).reshape(NUM_NURSES, DAYS)
         penalty = 0
         # 制約条件の評価
         for nurse in range(NUM_NURSES):
             working_days = np.sum(individual[nurse] > 0)
+            night_shifts = np.sum(individual[nurse] == 2)  # 追加: 夜勤日数のカウント
             if working_days > MAX_WORKING_DAYS:
                 penalty += (working_days - MAX_WORKING_DAYS) * 10
+            if night_shifts > MAX_NIGHT_SHIFTS:  # 追加: 夜勤日数の制約
+                penalty += (night_shifts - MAX_NIGHT_SHIFTS) * 10
             for day in range(DAYS):
                 if individual[nurse][day] == 2 and day + 1 < DAYS:
                     if individual[nurse][day + 1] != 0:
@@ -239,8 +240,8 @@ async def ga():
                 night_shift = np.sum(individual[:, day] == 2)
                 if day_shift != 6:
                     penalty += abs(day_shift - 6) * 10
-                if night_shift != 2:
-                    penalty += abs(night_shift - 2) * 10
+                if night_shift != 1:
+                    penalty += abs(night_shift - 1) * 10
             else:  # 休日
                 day_shift = np.sum(individual[:, day] == 1)
                 night_shift = np.sum(individual[:, day] == 2)
@@ -249,21 +250,29 @@ async def ga():
                 if night_shift != 1:
                     penalty += abs(night_shift - 1) * 10
         return penalty,
+    # Toolboxの作成
+    toolbox = base.Toolbox()
+    # 遺伝子を生成する関数"attr_gene"を登録 ok
+    toolbox.register("attr_gene", random.randint, 0, 2)
+    # 個体を生成する関数”individual"を登録
+    toolbox.register("individual", tools.initRepeat, creator.Individual,
+                    toolbox.attr_gene, NUM_NURSES * DAYS)
+    # 個体集団を生成する関数"population"を登録
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     # 評価関数"evaluate"を登録
     toolbox.register("evaluate", evaluate)
     # 交叉を行う関数"mate"を登録　２点交叉，１点交叉を混ぜて交叉する
     toolbox.register("mate", tools.cxUniform, indpb=0.5)
     # 変異を行う関数"mutate"を登録lowが最小の値
-    toolbox.register("mutate", tools.mutUniformInt, low=0, up=2, indpb=0.2)
-    # 個体選択法"select"を登録　トーナメントサイズを2
-    toolbox.register("select", tools.selTournament, tournsize=2)
-
+    toolbox.register("mutate", tools.mutShuffleIndexes, indpb=0.2)
+    # 個体選択法"select"を登録
+    toolbox.register("select", tools.selTournament, tournsize=3)
     random.seed(int(time.time()))
     # GAパラメータ
-    N_GEN = 10
+    N_GEN = gen
     POP_SIZE = 5000
     CX_PB = 0.9
-    MUT_PB = 0.1
+    MUT_PB = 0.2
     # 個体集団の生成
     pop = toolbox.population(n=POP_SIZE)
     print("Start of evolution")
@@ -273,28 +282,53 @@ async def ga():
     stats.register("std", np.std)
     stats.register("min", np.min)
     stats.register("max", np.max)
-    """
-    # ホールオブフェームを使用して最良個体を追跡
-    hof = tools.HallOfFame(1,np.array_equal)
-    """
     # アルゴリズムの実行
     algorithms.eaSimple(pop, toolbox, cxpb=CX_PB, mutpb=MUT_PB, ngen=N_GEN,
                         stats=stats, halloffame=None, verbose=True)
     print("-- End of (successful) evolution --")
     # 最良個体の抽出
     best_ind = tools.selBest(pop, 1)[0]
-    print("Best individual is %s, %s" % (best_ind, best_ind.fitness.values))
     print("Schedule:\n", np.array(best_ind).reshape(NUM_NURSES, DAYS))
 
     dic = {}
     for i in range(10):
+        l = np.array(best_ind).reshape(NUM_NURSES, DAYS)
         buff=[]
-        for j in range(30):
-            buff.append(np.array(best_ind).reshape(NUM_NURSES, DAYS)[i][j].item())
+        for j in range(31):
+            if l[i][j] == 0:
+                buff.append("/")
+            elif l[i][j] == 1:
+                buff.append("D")
+            elif l[i][j] == 2:
+                buff.append("N")
         dic.setdefault(f'ナース{i+1}', buff)
     app.state.result = dic
 
-    print(dic)
+        # 横の加算
+    l=[]
+    for i in range(10):
+        buff=0
+        for j in range(31):
+            shift = np.array(best_ind).reshape(NUM_NURSES, DAYS)[i][j]
+            if shift>0: buff += 1
+        l.append(buff)
+    app.state.num_of_days = l
+
+    # 縦の加算   
+    lD=[]
+    lN=[] 
+    for i in range(31):
+        buffD=0
+        buffN=0
+        for j in range(10):
+            shift = np.array(best_ind).reshape(NUM_NURSES, DAYS)[j][i]
+            if shift == 1: buffD += 1
+            elif shift == 2: buffN += 1
+        lD.append(buffD)
+        lN.append(buffN)
+    app.state.num_of_day_shift = lD
+    app.state.num_of_night_shift = lN
+        
     return 0
 
 
