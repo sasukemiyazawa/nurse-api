@@ -169,9 +169,9 @@ def mail_post(mail_text, mail_to, title):
         body=raw
     ).execute()
 async def mail(email: str):
-    mail_text = "http://localhost:3000/ga/result"
+    mail_text = "http://localhost:3000/ga/result ここをクリック"
     mailaddress = email #送信先のメールアドレス
-    mail_title = "メールのタイトル"
+    mail_title = "シフト表の生成が完了しました"
     mail_post(mail_text, mailaddress, mail_title)
     return 0
 
@@ -200,7 +200,8 @@ def res(background_tasks: BackgroundTasks, email: str = Form(), gen: int = Form(
 async def result():
     data = {}
     data["result"]=(app.state.result)
-    data["num_of_days"]=(app.state.num_of_days)
+    data["num_of_day"]=(app.state.num_of_day)
+    data["num_of_night"]=(app.state.num_of_night)
     data["num_of_day_shift"]=(app.state.num_of_day_shift)
     data["num_of_night_shift"]=(app.state.num_of_night_shift)
     # buff = dic.item()
@@ -263,8 +264,8 @@ def ga(gen: int):
     toolbox.register("evaluate", evaluate)
     # 交叉を行う関数"mate"を登録　２点交叉，１点交叉を混ぜて交叉する
     toolbox.register("mate", tools.cxUniform, indpb=0.5)
-    # 変異を行う関数"mutate"を登録lowが最小の値
-    toolbox.register("mutate", tools.mutShuffleIndexes, indpb=0.2)
+    # 変異を行う関数"mutate"を登録
+    toolbox.register("mutate", tools.mutUniformInt,low=0,up=2,indpb=0.2)
     # 個体選択法"select"を登録
     toolbox.register("select", tools.selTournament, tournsize=3)
     random.seed(int(time.time()))
@@ -305,15 +306,19 @@ def ga(gen: int):
     app.state.result = dic
 
         # 横の加算
-    l=[]
+    lD=[]
+    lN=[] 
     for i in range(10):
-        buff=0
+        buffD=0
+        buffN=0
         for j in range(31):
             shift = np.array(best_ind).reshape(NUM_NURSES, DAYS)[i][j]
-            if shift>0: buff += 1
-        l.append(buff)
-    app.state.num_of_days = l
-
+            if shift==1: buffD += 1
+            elif shift == 2: buffN += 2
+        lD.append(buffD)
+        lN.append(buffN)
+    app.state.num_of_day = lD
+    app.state.num_of_night = lN
     # 縦の加算   
     lD=[]
     lN=[] 
