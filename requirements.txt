@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pulp
+deap
+numpy
+python-multipart
