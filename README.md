@@ -13,10 +13,15 @@
 - 数理最適化（最大化 / 最小化問題）または GA（遺伝的アルゴリズム）で解を探索
 - REST API としてフロントエンドに結果を返却
 
+  https://github.com/sasukemiyazawa/nurse-api
+
 ## フロントエンド（React + MUI）
 - ブラウザから直接 API を叩かずに操作できる UI
 - シフト表を MUI のテーブルで視覚的に表示
 - パラメータ入力 → 最適化実行 → 結果表示までをワンストップで提供
+<img width="1099" height="477" alt="スクリーンショット 2026-03-23 16 34 28" src="https://github.com/user-attachments/assets/d06c3d4d-f263-4baf-bebc-ea4565bb4869" />
+<img width="769" height="511" alt="スクリーンショット 2026-03-23 16 36 25" src="https://github.com/user-attachments/assets/958174fd-ce47-4a25-aa96-3b5bc62c17db" />
+
 
 ---
 
